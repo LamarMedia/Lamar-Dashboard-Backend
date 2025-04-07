@@ -90,11 +90,11 @@ async function fetchComments(fileId) {
         // Return comments or an empty array if none exist
         return response.data?.comments || [];
     } catch (error) {
-        console.error("❌ Error fetching comments:", error.message || error);
+        console.error(" Error fetching comments:", error.message || error);
 
         // Handle specific API errors
         if (error.response) {
-            console.error(`🚨 API Response Error: ${error.response.status} - ${error.response.statusText}`);
+            console.error(` API Response Error: ${error.response.status} - ${error.response.statusText}`);
         }
 
         return [];
@@ -258,7 +258,7 @@ async function watchDriveChanges() {
                         await storeCommentInFirestore(comment, file.id, file.name);
                     }
                 } catch (error) {
-                    console.error(`❌ Error watching new file ${file.name} (${file.id}):`, error);
+                    console.error(` Error watching new file ${file.name} (${file.id}):`, error);
                 }
             } else {
                 console.log(`📁 File already registered: ${file.name}`);
@@ -267,7 +267,7 @@ async function watchDriveChanges() {
 
         return { success: true, message: "New file watch registration complete." };
     } catch (error) {
-        console.error("❌ Failed during watchDriveChanges:", error);
+        console.error(" Failed during watchDriveChanges:", error);
         return { success: false, error: error.message };
     }
 }
