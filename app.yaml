@@ -1,0 +1,4 @@
+runtime: nodejs20
+env_variables:
+  FILE_ID: "1rnBzUhXR1xbJdbo6UoXGJiMHIjL6DWpfs_I11m285fg"
+  WEBHOOK_URL: "https://dp01-dev-app-01.uc.r.appspot.com/webhook"
