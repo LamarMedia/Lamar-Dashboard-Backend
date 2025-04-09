@@ -10,73 +10,122 @@ const bigquery = new BigQuery();
 
 router.post("/addSupplierFilter", async (req, res) => {
     try {
-        // Fetch the max Supplier_Filter_ID
         const queryMaxId = `
-            SELECT MAX(Supplier_Filter_ID) AS max_id FROM \`dp01-dev-app-01.d_transformation_dp01_bq_01.Suppliers_filter\`
+            SELECT MAX(Supplier_Filter_ID) AS max_id 
+            FROM \`dp01-dev-app-01.d_transformation_dp01_bq_01.Suppliers_filter\`
         `;
-
         const [maxIdRows] = await bigquery.query(queryMaxId);
-        const lastId = maxIdRows[0]?.max_id || 0; // Default to 0 if no records exist
-        const newId = lastId + 1; // Increment by 1
+        const lastId = maxIdRows[0]?.max_id || 0;
+        const newId = lastId + 1;
 
-        // Extract required fields from request body --
-        const { Supplier_Name, Filter_Name, Supplier_Plant, Supplier_Type, Supplier_Project_Name, Supplier_City, Supplier_State, Created_By } = req.body;
+        const {
+            Supplier_Name,
+            Filter_Name,
+            Supplier_Plant,
+            Supplier_Type,
+            Supplier_Project_Name,
+            Supplier_City,
+            Supplier_State,
+            Created_By,
+            Employee_Number,
+            Expiring_Soon,
+            Supplier_SetupDate
+        } = req.body;
 
-        // Validate required fields
         if (!Filter_Name) {
             return res.status(400).json({ error: "Missing required field: Filter_Name" });
         }
 
-        // Set default values
         const isActive = true;
-
-        // Convert Created_Date to BigQuery's DATETIME format
         const Created_Date = new Date().toISOString().replace("T", " ").split(".")[0];
 
-        // Insert new record using ? placeholders (BigQuery does not support @params)
-        const queryInsert = `
+        const insertQuery = `
             INSERT INTO \`dp01-dev-app-01.d_transformation_dp01_bq_01.Suppliers_filter\`
-            (Supplier_Filter_ID, Supplier_Name, Filter_Name, Supplier_Plant, Supplier_Type, Supplier_Project_Name, Supplier_City, Supplier_State, isActive, Created_Date,Created_By)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, DATETIME(TIMESTAMP(?)),?)
+            (
+                Supplier_Filter_ID,
+                Supplier_Name,
+                Filter_Name,
+                Supplier_Plant,
+                Supplier_Type,
+                Supplier_Project_Name,
+                Supplier_City,
+                Supplier_State,
+                isActive,
+                Created_Date,
+                Created_By,
+                Employee_Number,
+                Expiring_Soon,
+                Supplier_SetupDate
+            )
+            VALUES (
+                @Supplier_Filter_ID,
+                @Supplier_Name,
+                @Filter_Name,
+                @Supplier_Plant,
+                @Supplier_Type,
+                @Supplier_Project_Name,
+                @Supplier_City,
+                @Supplier_State,
+                @isActive,
+                DATETIME(TIMESTAMP(@Created_Date)),
+                @Created_By,
+                @Employee_Number,
+                @Expiring_Soon,
+                @Supplier_SetupDate
+            )
         `;
 
-        const queryParams = [
-            newId,
-            Supplier_Name,
+        const params = {
+            Supplier_Filter_ID: newId,
+            Supplier_Name: Supplier_Name || null,
             Filter_Name,
-            Supplier_Plant,
-            Supplier_Type,
-            Supplier_Project_Name,
-            Supplier_City,
-            Supplier_State,
+            Supplier_Plant: Supplier_Plant || null,
+            Supplier_Type: Supplier_Type || null,
+            Supplier_Project_Name: Supplier_Project_Name || null,
+            Supplier_City: Supplier_City || null,
+            Supplier_State: Supplier_State || null,
             isActive,
             Created_Date,
-            Created_By
-        ];
+            Created_By: Created_By || null,
+            Employee_Number: Employee_Number || null,
+            Expiring_Soon: Expiring_Soon !== undefined ? String(Expiring_Soon) : null, // supports false
+            Supplier_SetupDate: Supplier_SetupDate || null
+        };
 
-        await bigquery.query({ query: queryInsert, params: queryParams });
+        const types = {
+            Supplier_Filter_ID: "INT64",
+            Supplier_Name: "STRING",
+            Filter_Name: "STRING",
+            Supplier_Plant: "STRING",
+            Supplier_Type: "STRING",
+            Supplier_Project_Name: "STRING",
+            Supplier_City: "STRING",
+            Supplier_State: "STRING",
+            isActive: "BOOL",
+            Created_Date: "STRING",
+            Created_By: "STRING",
+            Employee_Number: "STRING",
+            Expiring_Soon: "STRING",
+            Supplier_SetupDate: "STRING"
+        };
 
-        console.log(` Record inserted with Filter Name: ${Filter_Name}`);
+        await bigquery.query({
+            query: insertQuery,
+            params,
+            types
+        });
 
         res.status(201).json({
             message: "Record inserted successfully",
             Supplier_Filter_ID: newId,
-            Supplier_Name,
-            Filter_Name,
-            Supplier_Plant,
-            Supplier_Type,
-            Supplier_Project_Name,
-            Supplier_City,
-            Supplier_State,
-            isActive,
-            Created_Date,
-            Created_By
+            ...params
         });
     } catch (error) {
-        console.error(" Error inserting record into BigQuery:", error);
+        console.error("Error inserting record into BigQuery:", error);
         res.status(500).json({ error: "Failed to insert record" });
     }
 });
+
 
 
 router.get("/supplierFilters", async (req, res) => {
@@ -121,16 +170,21 @@ router.put("/updateSupplierFilter/:id", async (req, res) => {
             Supplier_City,
             Supplier_State,
             isActive,
-            Created_By
+            Created_By,
+            Employee_Number,
+            Expiring_Soon,
+            Supplier_SetupDate
         } = req.body;
 
-        // Ensure at least one field is provided for update
-        if (!Supplier_Name && !Filter_Name && !Supplier_Plant && !Supplier_Type &&
-            !Supplier_Project_Name && !Supplier_City && !Supplier_State && isActive === undefined && !Created_By) {
+        if (
+            !Supplier_Name && !Filter_Name && !Supplier_Plant && !Supplier_Type &&
+            !Supplier_Project_Name && !Supplier_City && !Supplier_State &&
+            isActive === undefined && !Created_By &&
+            !Employee_Number && !Expiring_Soon && !Supplier_SetupDate
+        ) {
             return res.status(400).json({ error: "At least one field must be provided for update" });
         }
 
-        // Prepare dynamic update query
         let updateFields = [];
         let params = [];
 
@@ -162,14 +216,29 @@ router.put("/updateSupplierFilter/:id", async (req, res) => {
             updateFields.push("Supplier_State = ?");
             params.push(Supplier_State);
         }
-        if (Created_By) { // Added Created_By field in the update
+        if (isActive !== undefined) {
+            updateFields.push("isActive = ?");
+            params.push(isActive);
+        }
+        if (Created_By) {
             updateFields.push("Created_By = ?");
             params.push(Created_By);
         }
+        if (Employee_Number) {
+            updateFields.push("Employee_Number = ?");
+            params.push(Employee_Number);
+        }
+        if (Expiring_Soon !== undefined) {
+            updateFields.push("Expiring_Soon = ?");
+            params.push(Expiring_Soon);
+        }
+        if (Supplier_SetupDate) {
+            updateFields.push("Supplier_SetupDate = ?");
+            params.push(Supplier_SetupDate);
+        }
 
-        params.push(supplierId); // Supplier ID for WHERE clause
+        params.push(supplierId);
 
-        // Construct the query dynamically
         const updateQuery = `
             UPDATE \`dp01-dev-app-01.d_transformation_dp01_bq_01.Suppliers_filter\`
             SET ${updateFields.join(", ")}
@@ -178,17 +247,17 @@ router.put("/updateSupplierFilter/:id", async (req, res) => {
 
         await bigquery.query({ query: updateQuery, params });
 
-        console.log(` Supplier_Filter_ID ${supplierId} updated successfully`);
         res.status(200).json({
             message: "Record updated successfully",
             Supplier_Filter_ID: supplierId
         });
 
     } catch (error) {
-        console.error(" Error updating record in BigQuery:", error);
+        console.error("Error updating record in BigQuery:", error);
         res.status(500).json({ error: "Failed to update record" });
     }
 });
+
 
 
 router.delete("/deleteSupplierFilter/:id", async (req, res) => {
@@ -237,14 +306,19 @@ router.get("/supplierPopupList", async (req, res) => {
         }
 
         const query = `
-            SELECT 
+        SELECT 
+            DISTINCT Tax_Id, 
+                Employee_Id as Employee_Number,
+                CAST(Supplier_Setup_Date AS STRING) AS Supplier_Setup_Date,
                 Plant AS Supplier_Plant,
+                CASE WHEN (DATE_DIFF(supplier.Insurance_Expiration_Date,CURRENT_DATE(),day)) <0  or ((DATE_DIFF(supplier.Insurance_Expiration_Date,CURRENT_DATE(),day)) >=0 and (DATE_DIFF(supplier.Insurance_Expiration_Date,CURRENT_DATE(),day))  <=120)
+                THEN 'Yes' ELSE 'No' END AS Contract_Insurance_Expiring_Soon,
                 Project_Name AS Supplier_Project_Name,
                 Supplier_City,
                 Supplier_State,
                 Supplier_Type_Cd AS Supplier_Type,
                 Supplier_Name
-            FROM \`dp01-dev-app-01.d_transformation_dp01_bq_01.supplier_flattened_v\`
+            FROM \`dp01-dev-app-01.d_transformation_dp01_bq_01.supplier_flattened_v\` AS supplier
             WHERE email_user = @email
             ORDER BY Supplier_City ASC,
                 Supplier_Name ASC,
@@ -506,7 +580,9 @@ router.get("/expenseFilterList/:email", async (req, res) => {
                 CAST(Payment_Date AS STRING) AS Payment_Date, -- Convert to plain string
                 Supplier_Name,
                 Supplier_Type_Cd AS Supplier_Type,
-                project_name AS Project
+                project_name AS Project,
+                Expense_Account_Name as Account_Name,
+                Expense_Sub_Account_Code as Sub_Account_Code
             FROM \`dp01-dev-app-01.d_transformation_dp01_bq_01.supplier_flattened_v\`
             WHERE email_user = @email
             ORDER BY Plant ASC,
@@ -544,44 +620,81 @@ router.post("/addExpenseFilter", async (req, res) => {
             FROM \`dp01-dev-app-01.d_transformation_dp01_bq_01.Expense_Filter\`
         `;
         const [maxIdRows] = await bigquery.query(queryMaxId);
-        const lastId = maxIdRows[0]?.max_id || 0; // Default to 0 if no records exist
-        const newId = lastId + 1; // Increment by 1
+        const lastId = maxIdRows[0]?.max_id || 0;
+        const newId = lastId + 1;
 
-        // Extract required fields from request body
+        // Extract fields from request body
         const {
-            Invoice_No, Plant, Payment_Date, Supplier_Name, Supplier_Type, Project, Created_By, ExpenseFilter_Name
+            Invoice_No,
+            Plant,
+            Payment_Date,
+            Supplier_Name,
+            Supplier_Type,
+            Project,
+            Created_By,
+            ExpenseFilter_Name,
+            Account_Name,
+            Sub_Account_Name
         } = req.body;
 
         if (!ExpenseFilter_Name) {
-            return res.status(400).json({ error: "Missing required fields: ExpenseFilter_Name" });
+            return res.status(400).json({ error: "Missing required field: ExpenseFilter_Name" });
         }
 
-        // Convert Created_Date to string format
+        // Format Payment_Date as 'YYYY-MM-DD' or NULL
+        const formattedPaymentDate = Payment_Date
+            ? new Date(Payment_Date).toISOString().split("T")[0]
+            : null;
+
+        // Format Created_Date as DATETIME string
         const Created_Date = new Date().toISOString().replace("T", " ").split(".")[0];
 
-        // Ensure Payment_Date is a valid string or set to NULL
-        const formattedPaymentDate = Payment_Date
-            ? new Date(Payment_Date).toISOString().split("T")[0]  // Convert to 'YYYY-MM-DD' format
-            : null; // NULL if empty or invalid
-
-        // Insert query using named parameters
+        // Insert query
         const queryInsert = `
             INSERT INTO \`dp01-dev-app-01.d_transformation_dp01_bq_01.Expense_Filter\` 
-            (ExpenseFilter_Id, Invoice_No, Plant, Payment_Date, Supplier_Name, Supplier_Type, Project, Created_By, ExpenseFilter_Name, Created_Date)
-            VALUES (@ExpenseFilter_Id, @Invoice_No, @Plant, @Payment_Date, @Supplier_Name, @Supplier_Type, @Project, @Created_By, @ExpenseFilter_Name, @Created_Date)
+            (
+                ExpenseFilter_Id,
+                Invoice_No,
+                Plant,
+                Payment_Date,
+                Supplier_Name,
+                Supplier_Type,
+                Project,
+                Created_By,
+                ExpenseFilter_Name,
+                Created_Date,
+                Account_Name,
+                Sub_Account_Name
+            )
+            VALUES (
+                @ExpenseFilter_Id,
+                @Invoice_No,
+                @Plant,
+                @Payment_Date,
+                @Supplier_Name,
+                @Supplier_Type,
+                @Project,
+                @Created_By,
+                @ExpenseFilter_Name,
+                @Created_Date,
+                @Account_Name,
+                @Sub_Account_Name
+            )
         `;
 
         const queryParams = {
             ExpenseFilter_Id: newId,
-            Invoice_No,
+            Invoice_No: Invoice_No || null,
             Plant: Plant || null,
-            Payment_Date: formattedPaymentDate, // Ensured valid date or NULL
+            Payment_Date: formattedPaymentDate,
             Supplier_Name: Supplier_Name || null,
             Supplier_Type: Supplier_Type || null,
             Project: Project || null,
             Created_By: Created_By || null,
             ExpenseFilter_Name,
-            Created_Date
+            Created_Date,
+            Account_Name: Account_Name || null,
+            Sub_Account_Name: Sub_Account_Name || null
         };
 
         const queryOptions = {
@@ -591,13 +704,15 @@ router.post("/addExpenseFilter", async (req, res) => {
                 ExpenseFilter_Id: "INT64",
                 Invoice_No: "STRING",
                 Plant: "STRING",
-                Payment_Date: "STRING", // Ensure it's treated as a STRING
+                Payment_Date: "STRING", // Treated as string for date conversion
                 Supplier_Name: "STRING",
                 Supplier_Type: "STRING",
                 Project: "STRING",
                 Created_By: "STRING",
                 ExpenseFilter_Name: "STRING",
-                Created_Date: "STRING"
+                Created_Date: "STRING",
+                Account_Name: "STRING",
+                Sub_Account_Name: "STRING"
             }
         };
 
@@ -614,7 +729,9 @@ router.post("/addExpenseFilter", async (req, res) => {
             Project,
             Created_By,
             ExpenseFilter_Name,
-            Created_Date
+            Created_Date,
+            Account_Name,
+            Sub_Account_Name
         });
     } catch (error) {
         console.error("Error inserting expense filter into BigQuery:", error);
