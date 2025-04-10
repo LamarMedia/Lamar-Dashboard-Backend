@@ -6,7 +6,6 @@ const bigquery = new BigQuery();
 
 
 
-// Function to insert and fetch unapproved invoices in new format
 
 router.post("/addSupplierFilter", async (req, res) => {
     try {
@@ -29,7 +28,8 @@ router.post("/addSupplierFilter", async (req, res) => {
             Created_By,
             Employee_Number,
             Expiring_Soon,
-            Supplier_SetupDate
+            Supplier_SetupDate,
+            Tax_Id
         } = req.body;
 
         if (!Filter_Name) {
@@ -55,7 +55,8 @@ router.post("/addSupplierFilter", async (req, res) => {
                 Created_By,
                 Employee_Number,
                 Expiring_Soon,
-                Supplier_SetupDate
+                Supplier_SetupDate,
+                Tax_Id
             )
             VALUES (
                 @Supplier_Filter_ID,
@@ -71,7 +72,8 @@ router.post("/addSupplierFilter", async (req, res) => {
                 @Created_By,
                 @Employee_Number,
                 @Expiring_Soon,
-                @Supplier_SetupDate
+                @Supplier_SetupDate,
+                @Tax_Id
             )
         `;
 
@@ -89,7 +91,8 @@ router.post("/addSupplierFilter", async (req, res) => {
             Created_By: Created_By || null,
             Employee_Number: Employee_Number || null,
             Expiring_Soon: Expiring_Soon !== undefined ? String(Expiring_Soon) : null, // supports false
-            Supplier_SetupDate: Supplier_SetupDate || null
+            Supplier_SetupDate: Supplier_SetupDate || null,
+            Tax_Id:Tax_Id|| null
         };
 
         const types = {
@@ -106,7 +109,8 @@ router.post("/addSupplierFilter", async (req, res) => {
             Created_By: "STRING",
             Employee_Number: "STRING",
             Expiring_Soon: "STRING",
-            Supplier_SetupDate: "STRING"
+            Supplier_SetupDate: "STRING",
+            Tax_Id:"STRING"
         };
 
         await bigquery.query({
@@ -358,6 +362,13 @@ router.get("/invoiceFilterList/:email", async (req, res) => {
                 CAST(invoice_date AS STRING) AS Invoice_Date,  -- Convert to string
                 CAST(payment_date AS STRING) AS Paid_Date,  -- Convert to string
                 project_name AS Project,
+                CAST(Invoice_Due_Date AS STRING) AS Invoice_Due_Date,
+                PO_Number as Purchase_Order_Number,
+                Job_Ticket_No,
+                Space_Contract_NO as Space_Contract_No,
+                Production_Contract_No,
+                Fixed_Asset_ID,
+                Panel as Panel_No,
                 Invoice_Status
             FROM \`dp01-dev-app-01.d_transformation_dp01_bq_01.supplier_flattened_v\`
             WHERE Payment_Date >= '2024-01-01'
@@ -382,37 +393,89 @@ router.get("/invoiceFilterList/:email", async (req, res) => {
 //add invoice
 router.post("/addInvoice", async (req, res) => {
     try {
-        // Fetch the max Invoice_Filter_Id
         const queryMaxId = `
-            SELECT MAX(Invoice_Filter_Id) AS max_id FROM \`dp01-dev-app-01.d_transformation_dp01_bq_01.Invoice_Filter\`
+            SELECT MAX(Invoice_Filter_Id) AS max_id 
+            FROM \`dp01-dev-app-01.d_transformation_dp01_bq_01.Invoice_Filter\`
         `;
 
         const [maxIdRows] = await bigquery.query(queryMaxId);
-        const lastId = maxIdRows[0]?.max_id || 0; // Default to 0 if no records exist
-        const newId = lastId + 1; // Increment by 1
+        const lastId = maxIdRows[0]?.max_id || 0;
+        const newId = lastId + 1;
 
-        // Extract required fields from request body
-        let { Supplier_Name, Invoice_No, Invoice_Date, Paid_Date, Project, Invoice_Status, Created_By,
-            InvoiceFilter_Name, Amount, Created_Date, Supplier_Type } = req.body;
+        // Extract fields from request body
+        let {
+            Supplier_Name,
+            Invoice_No,
+            Invoice_Date,
+            Paid_Date,
+            Project,
+            Invoice_Status,
+            Created_By,
+            InvoiceFilter_Name,
+            Amount,
+            Created_Date,
+            Supplier_Type,
+            Purchase_Order_No,
+            Space_Contract_No,
+            Job_Ticket_No,
+            Production_Contract_No,
+            Fixed_Asset_ID,
+            Panel_No,
+            Due_Date
+        } = req.body;
 
-        // Validate required fields
         if (!InvoiceFilter_Name) {
             return res.status(400).json({ error: "Missing required field: InvoiceFilter_Name" });
         }
 
-        // Convert Created_Date to BigQuery's DATETIME format if not provided
         Created_Date = Created_Date || new Date().toISOString().replace("T", " ").split(".")[0];
 
-        // Insert new record using parameterized query
         const queryInsert = `
             INSERT INTO \`dp01-dev-app-01.d_transformation_dp01_bq_01.Invoice_Filter\`
-            (Invoice_Filter_Id, Supplier_Name, Invoice_No, Invoice_Date, Paid_Date, Project, Invoice_Status, 
-            Created_By, InvoiceFilter_Name, Amount, Created_Date, Supplier_Type)
-            VALUES (@Invoice_Filter_Id, @Supplier_Name, @Invoice_No, @Invoice_Date, @Paid_Date, @Project, 
-                    @Invoice_Status, @Created_By, @InvoiceFilter_Name, @Amount, @Created_Date, @Supplier_Type)
+            (
+                Invoice_Filter_Id,
+                Supplier_Name,
+                Invoice_No,
+                Invoice_Date,
+                Paid_Date,
+                Project,
+                Invoice_Status,
+                Created_By,
+                InvoiceFilter_Name,
+                Amount,
+                Created_Date,
+                Supplier_Type,
+                Purchase_Order_No,
+                Space_Contract_No,
+                Job_Ticket_No,
+                Production_Contract_No,
+                Fixed_Asset_ID,
+                Panel_No,
+                Due_Date
+            )
+            VALUES (
+                @Invoice_Filter_Id,
+                @Supplier_Name,
+                @Invoice_No,
+                @Invoice_Date,
+                @Paid_Date,
+                @Project,
+                @Invoice_Status,
+                @Created_By,
+                @InvoiceFilter_Name,
+                @Amount,
+                @Created_Date,
+                @Supplier_Type,
+                @Purchase_Order_No,
+                @Space_Contract_No,
+                @Job_Ticket_No,
+                @Production_Contract_No,
+                @Fixed_Asset_ID,
+                @Panel_No,
+                @Due_Date
+            )
         `;
 
-        // Handle null values explicitly
         const queryParams = {
             Invoice_Filter_Id: newId,
             Supplier_Name: Supplier_Name || null,
@@ -422,10 +485,17 @@ router.post("/addInvoice", async (req, res) => {
             Project: Project || null,
             Invoice_Status: Invoice_Status || null,
             Created_By: Created_By || null,
-            InvoiceFilter_Name: InvoiceFilter_Name || null,
+            InvoiceFilter_Name,
             Amount: Amount || null,
-            Created_Date: Created_Date,
-            Supplier_Type: Supplier_Type || null
+            Created_Date,
+            Supplier_Type: Supplier_Type || null,
+            Purchase_Order_No: Purchase_Order_No || null,
+            Space_Contract_No: Space_Contract_No || null,
+            Job_Ticket_No: Job_Ticket_No || null,
+            Production_Contract_No: Production_Contract_No || null,
+            Fixed_Asset_ID: Fixed_Asset_ID || null,
+            Panel_No: Panel_No || null,
+            Due_Date: Due_Date || null
         };
 
         const queryOptions = {
@@ -443,13 +513,18 @@ router.post("/addInvoice", async (req, res) => {
                 InvoiceFilter_Name: "STRING",
                 Amount: "STRING",
                 Created_Date: "STRING",
-                Supplier_Type: "STRING"
+                Supplier_Type: "STRING",
+                Purchase_Order_No: "STRING",
+                Space_Contract_No: "STRING",
+                Job_Ticket_No: "STRING",
+                Production_Contract_No: "STRING",
+                Fixed_Asset_ID: "STRING",
+                Panel_No: "STRING",
+                Due_Date: "STRING"
             }
         };
 
         await bigquery.query(queryOptions);
-
-        console.log(`Record inserted with InvoiceFilter_Name: ${InvoiceFilter_Name}`);
 
         res.status(201).json({
             message: "Record inserted successfully",
@@ -464,7 +539,14 @@ router.post("/addInvoice", async (req, res) => {
             InvoiceFilter_Name,
             Amount,
             Created_Date,
-            Supplier_Type
+            Supplier_Type,
+            Purchase_Order_No,
+            Space_Contract_No,
+            Job_Ticket_No,
+            Production_Contract_No,
+            Fixed_Asset_ID,
+            Panel_No,
+            Due_Date
         });
     } catch (error) {
         console.error("Error inserting record into BigQuery:", error);
@@ -575,7 +657,7 @@ router.get("/expenseFilterList/:email", async (req, res) => {
         // SQL query with parameterized format
         const query = `
             SELECT DISTINCT
-                Invoice_Id AS Invoice_No, 
+                Invoice_Id, 
                 Plant,
                 CAST(Payment_Date AS STRING) AS Payment_Date, -- Convert to plain string
                 Supplier_Name,
@@ -634,18 +716,14 @@ router.post("/addExpenseFilter", async (req, res) => {
             Created_By,
             ExpenseFilter_Name,
             Account_Name,
-            Sub_Account_Name
+            Sub_Account_Name,
         } = req.body;
 
         if (!ExpenseFilter_Name) {
             return res.status(400).json({ error: "Missing required field: ExpenseFilter_Name" });
         }
 
-        // Format Payment_Date as 'YYYY-MM-DD' or NULL
-        const formattedPaymentDate = Payment_Date
-            ? new Date(Payment_Date).toISOString().split("T")[0]
-            : null;
-
+        
         // Format Created_Date as DATETIME string
         const Created_Date = new Date().toISOString().replace("T", " ").split(".")[0];
 
@@ -686,7 +764,7 @@ router.post("/addExpenseFilter", async (req, res) => {
             ExpenseFilter_Id: newId,
             Invoice_No: Invoice_No || null,
             Plant: Plant || null,
-            Payment_Date: formattedPaymentDate,
+            Payment_Date: Payment_Date || null,
             Supplier_Name: Supplier_Name || null,
             Supplier_Type: Supplier_Type || null,
             Project: Project || null,
@@ -704,7 +782,7 @@ router.post("/addExpenseFilter", async (req, res) => {
                 ExpenseFilter_Id: "INT64",
                 Invoice_No: "STRING",
                 Plant: "STRING",
-                Payment_Date: "STRING", // Treated as string for date conversion
+                Payment_Date: "STRING",
                 Supplier_Name: "STRING",
                 Supplier_Type: "STRING",
                 Project: "STRING",
@@ -712,7 +790,7 @@ router.post("/addExpenseFilter", async (req, res) => {
                 ExpenseFilter_Name: "STRING",
                 Created_Date: "STRING",
                 Account_Name: "STRING",
-                Sub_Account_Name: "STRING"
+                Sub_Account_Name: "STRING",
             }
         };
 
@@ -723,7 +801,7 @@ router.post("/addExpenseFilter", async (req, res) => {
             ExpenseFilter_Id: newId,
             Invoice_No,
             Plant,
-            Payment_Date: formattedPaymentDate,
+            Payment_Date,
             Supplier_Name,
             Supplier_Type,
             Project,
@@ -731,7 +809,7 @@ router.post("/addExpenseFilter", async (req, res) => {
             ExpenseFilter_Name,
             Created_Date,
             Account_Name,
-            Sub_Account_Name
+            Sub_Account_Name,
         });
     } catch (error) {
         console.error("Error inserting expense filter into BigQuery:", error);
@@ -827,6 +905,11 @@ router.get("/projectPageFilterList/:email", async (req, res) => {
 
         const query = `
             SELECT DISTINCT
+                Template,
+                Structure,
+                Panel as  Panel_No,
+                Assigned_To,
+                cast(Days_Assigned as integer) as Days_Assigned,
                 Project_Name,
                 Plant,
                 Project_Status,
@@ -852,36 +935,77 @@ router.get("/projectPageFilterList/:email", async (req, res) => {
 
 router.post("/addProjectFilter", async (req, res) => {
     try {
-        // Fetch the max ProjectFilter_Id
+        // Get the max ProjectFilter_Id
         const queryMaxId = `
-            SELECT MAX(ProjectFilter_Id) AS max_id FROM \`dp01-dev-app-01.d_transformation_dp01_bq_01.Project_Filter\`
+            SELECT MAX(ProjectFilter_Id) AS max_id 
+            FROM \`dp01-dev-app-01.d_transformation_dp01_bq_01.Project_Filter\`
         `;
 
         const [maxIdRows] = await bigquery.query(queryMaxId);
-        const lastId = maxIdRows[0]?.max_id || 0; // Default to 0 if no records exist
-        const newId = lastId + 1; // Increment by 1
+        const lastId = maxIdRows[0]?.max_id || 0;
+        const newId = lastId + 1;
 
-        // Extract required fields from request body
-        let { ProjectFilter_Name, Project_Name, Plant, Project_Status, Region, AFM, Created_By, Created_Date } = req.body;
+        // Extract fields from request body
+        let {
+            ProjectFilter_Name,
+            Project_Name,
+            Plant,
+            Project_Status,
+            Region,
+            AFM,
+            Created_By,
+            Created_Date,
+            Template,
+            Structure,
+            Panel_No,
+            Assigned_To,
+            Days_Assigned
+        } = req.body;
 
-        // Validate required fields
         if (!ProjectFilter_Name) {
             return res.status(400).json({ error: "Missing required field: ProjectFilter_Name" });
         }
 
-        // Convert Created_Date to string format (YYYY-MM-DD HH:MM:SS)
         Created_Date = Created_Date
             ? new Date(Created_Date).toISOString().replace("T", " ").split(".")[0]
             : new Date().toISOString().replace("T", " ").split(".")[0];
 
-        // Insert new record using parameterized query
         const queryInsert = `
             INSERT INTO \`dp01-dev-app-01.d_transformation_dp01_bq_01.Project_Filter\`
-            (ProjectFilter_Id, ProjectFilter_Name, Project_Name, Plant, Project_Status, Region, AFM, Created_By, Created_Date)
-            VALUES (@ProjectFilter_Id, @ProjectFilter_Name, @Project_Name, @Plant, @Project_Status, @Region, @AFM, @Created_By, @Created_Date)
+            (
+                ProjectFilter_Id,
+                ProjectFilter_Name,
+                Project_Name,
+                Plant,
+                Project_Status,
+                Region,
+                AFM,
+                Created_By,
+                Created_Date,
+                Template,
+                Structure,
+                Panel_No,
+                Assigned_To,
+                Days_Assigned
+            )
+            VALUES (
+                @ProjectFilter_Id,
+                @ProjectFilter_Name,
+                @Project_Name,
+                @Plant,
+                @Project_Status,
+                @Region,
+                @AFM,
+                @Created_By,
+                @Created_Date,
+                @Template,
+                @Structure,
+                @Panel_No,
+                @Assigned_To,
+                @Days_Assigned
+            )
         `;
 
-        // Define parameter types explicitly
         const queryParams = {
             ProjectFilter_Id: newId,
             ProjectFilter_Name: ProjectFilter_Name || null,
@@ -891,10 +1015,14 @@ router.post("/addProjectFilter", async (req, res) => {
             Region: Region || null,
             AFM: AFM || null,
             Created_By: Created_By || null,
-            Created_Date: Created_Date // Ensure this is a STRING
+            Created_Date,
+            Template: Template || null,
+            Structure: Structure || null,
+            Panel_No: Panel_No || null,
+            Assigned_To: Assigned_To || null,
+            Days_Assigned: Days_Assigned !== undefined ? parseInt(Days_Assigned, 10) : null
         };
 
-        // Explicitly define types for null values
         const queryOptions = {
             query: queryInsert,
             params: queryParams,
@@ -907,13 +1035,16 @@ router.post("/addProjectFilter", async (req, res) => {
                 Region: "STRING",
                 AFM: "STRING",
                 Created_By: "STRING",
-                Created_Date: "STRING" // Change type to STRING
+                Created_Date: "STRING",
+                Template: "STRING",
+                Structure: "STRING",
+                Panel_No: "STRING",
+                Assigned_To: "STRING",
+                Days_Assigned: "INT64"
             }
         };
 
         await bigquery.query(queryOptions);
-
-        console.log(`Record inserted with ProjectFilter_Name: ${ProjectFilter_Name}`);
 
         res.status(201).json({
             message: "Record inserted successfully",
@@ -925,7 +1056,12 @@ router.post("/addProjectFilter", async (req, res) => {
             Region,
             AFM,
             Created_By,
-            Created_Date
+            Created_Date,
+            Template,
+            Structure,
+            Panel_No,
+            Assigned_To,
+            Days_Assigned
         });
     } catch (error) {
         console.error("Error inserting record into BigQuery:", error);
