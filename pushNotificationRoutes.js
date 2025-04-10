@@ -551,7 +551,7 @@ function formatId(id) {
 
 async function updateAlertsIsSeen(ids, userEmail, type) {
     if (type === "Colab") {
-        const id = ids.trim(); // expect a single doc ID
+        const id = Array.isArray(ids) ? ids[0] : ids.trim(); // only one expected
 
         try {
             const docRef = db.collection("drive_comments").doc(id);
@@ -573,16 +573,18 @@ async function updateAlertsIsSeen(ids, userEmail, type) {
                 return { success: true, message: `Comment ${id} marked as seen.` };
             });
 
-            return [result]; // always return an array for consistency
-
+            return [result];
         } catch (error) {
             console.error(`Firestore error for comment ${id}:`, error);
             throw new Error(`Failed to update comment ${id}`);
         }
     }
 
-    // BigQuery path for Budget, Insurance, Invoice
-    const idArray = [...new Set(ids.split(',').map(id => id.trim()).filter(Boolean))];
+    // ✅ Fix here: Normalize ids into an array
+    const idArray = Array.isArray(ids)
+        ? [...new Set(ids.map((id) => id.trim()).filter(Boolean))]
+        : [...new Set(ids.split(',').map((id) => id.trim()).filter(Boolean))];
+
     let table, idColumn;
 
     switch (type) {
@@ -602,7 +604,7 @@ async function updateAlertsIsSeen(ids, userEmail, type) {
             throw new Error(`Unsupported alert type: ${type}`);
     }
 
-    const formattedIds = idArray.map(formatId);
+    const formattedIds = idArray.map(formatId); // assume formatId wraps IDs in quotes or handles type
     const idListStr = formattedIds.join(', ');
 
     const query = `
